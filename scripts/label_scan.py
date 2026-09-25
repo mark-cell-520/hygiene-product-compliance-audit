@@ -116,6 +116,27 @@ EXTS = (".txt", ".md", ".html", ".htm", ".csv", ".json", ".py", ".doc", ".docx")
 # 09113 与 GB/T 40181 语境下必须印的警示语），不算违规候选。
 NEGATION_PREFIX = ("不", "勿", "禁", "非", "否", "杜绝", "避免")
 
+# 法定必标项语境白名单：这些词组出现在标签上**是要求必须标注**的内容，
+# 不是营销宣称，命中禁词表时应跳过（GB 38598-2020 8.1 + GB 15979-2024
+# 包装标识 + GB/T 39391 / FZ/T 64125 等标准的使用说明必标项）。
+# 典型误报："消毒方法：环氧乙烷"、"消毒日期：20260101"、"适用腰围最大值"。
+LEGAL_LABEL_CONTEXT = (
+    "消毒方法", "消毒日期", "消毒级", "灭菌方法", "灭菌日期", "杀菌类别",
+    "杀灭微生物类别", "抑制微生物类别", "适用腰围最大值", "最大腰围",
+)
+
+
+def in_legal_context(line, idx, word):
+    """命中词是否落在法定必标项词组内（如'消毒方法'中的'消毒'）。"""
+    for phrase in LEGAL_LABEL_CONTEXT:
+        p = phrase.find(word)
+        if p < 0:
+            continue
+        start = idx - p
+        if start >= 0 and line[start:start + len(phrase)] == phrase:
+            return True
+    return False
+
 
 def is_negated(line, idx):
     """判断 line[idx] 处的命中词是否处于否定语境（前 4 个字符内出现否定标记）。"""
@@ -161,6 +182,10 @@ def scan_file(path, word_tables, regex_tables):
                     # （不可/勿/禁止）正好是法定警示语，不列为候选违规。
                     if rule == "不可冲散却标湿厕纸" and is_negated(line, idx):
                         start = idx + 1
+                        continue
+                    # 法定必标项语境（消毒方法/消毒日期/适用腰围最大值等）跳过
+                    if in_legal_context(line, idx, w):
+                        start = idx + len(w)
                         continue
                     hits.append({"file": path, "line": ln, "match": w,
                                  "rule": rule, "text": line.strip()[:120]})
